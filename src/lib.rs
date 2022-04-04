@@ -921,6 +921,21 @@ fn parse_headers_iter_uninit<'a, 'b>(
 
     let mut iter = autoshrink.headers.iter_mut();
 
+    macro_rules! ignore_line {
+        ($bytes:ident) => {
+            loop {
+                match next!(bytes) {
+                    b'\r' => {
+                        expect!(bytes.next() == b'\n' => Err(Error::NewLine));
+                        break;
+                    },
+                    b'\n' => break,
+                    _ => ()
+                }
+            }
+        };
+    }
+
     'headers: loop {
         // a newline here means the head is over!
         let b = next!(bytes);
@@ -932,7 +947,8 @@ fn parse_headers_iter_uninit<'a, 'b>(
             result = Ok(Status::Complete(count + bytes.pos()));
             break;
         } else if !is_header_name_token(b) {
-            return Err(Error::HeaderName);
+            ignore_line!(bytes);
+            continue 'headers;
         }
 
         let uninit_header = match iter.next() {
@@ -951,7 +967,8 @@ fn parse_headers_iter_uninit<'a, 'b>(
                 break 'name _name;
             } else if !is_header_name_token(b) {
                 if !config.allow_spaces_after_header_name_in_responses {
-                    return Err(Error::HeaderName);
+                    ignore_line!(bytes);
+                    continue 'headers;
                 }
                 count += bytes.pos();
                 let _name = unsafe { str::from_utf8_unchecked(bytes.slice_skip(1)) };
@@ -967,7 +984,8 @@ fn parse_headers_iter_uninit<'a, 'b>(
                         bytes.slice();
                         break 'name _name;
                     } else {
-                        return Err(Error::HeaderName);
+                        ignore_line!(bytes);
+                        continue 'headers;
                     }
                 }
             }
